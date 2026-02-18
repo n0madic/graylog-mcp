@@ -83,8 +83,12 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 				data[f] = v
 			}
 		}
-		b, _ := json.Marshal(sortedMap(data))
-		h.Write(b)
+		b, err := json.Marshal(sortedMap(data))
+		if err != nil {
+			fmt.Fprintf(h, "%v", sortedMap(data))
+		} else {
+			h.Write(b)
+		}
 	} else {
 		all := messageToMap(msg)
 		filtered := make(map[string]any)
@@ -94,8 +98,12 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 			}
 			filtered[k] = v
 		}
-		b, _ := json.Marshal(sortedMap(filtered))
-		h.Write(b)
+		b, err := json.Marshal(sortedMap(filtered))
+		if err != nil {
+			fmt.Fprintf(h, "%v", sortedMap(filtered))
+		} else {
+			h.Write(b)
+		}
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))

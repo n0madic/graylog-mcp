@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -24,7 +25,8 @@ func Load() (*Config, error) {
 	flag.StringVar(&cfg.Username, "username", os.Getenv("GRAYLOG_USERNAME"), "Graylog username")
 	flag.StringVar(&cfg.Password, "password", os.Getenv("GRAYLOG_PASSWORD"), "Graylog password")
 	flag.StringVar(&cfg.Token, "token", os.Getenv("GRAYLOG_TOKEN"), "Graylog API access token (alternative to username/password)")
-	flag.BoolVar(&cfg.TLSSkipVerify, "tls-skip-verify", os.Getenv("GRAYLOG_TLS_SKIP_VERIFY") == "true", "Skip TLS certificate verification")
+	tlsSkipVerifyDefault, _ := strconv.ParseBool(os.Getenv("GRAYLOG_TLS_SKIP_VERIFY"))
+	flag.BoolVar(&cfg.TLSSkipVerify, "tls-skip-verify", tlsSkipVerifyDefault, "Skip TLS certificate verification")
 
 	defaultTimeout := 30 * time.Second
 	if t := os.Getenv("GRAYLOG_TIMEOUT"); t != "" {

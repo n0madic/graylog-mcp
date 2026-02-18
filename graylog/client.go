@@ -21,11 +21,8 @@ type Client struct {
 }
 
 func NewClient(baseURL, username, password string, tlsSkipVerify bool, timeout time.Duration) *Client {
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: tlsSkipVerify,
-		},
-	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: tlsSkipVerify} //nolint:gosec
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		username: username,

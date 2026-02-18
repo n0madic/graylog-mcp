@@ -103,7 +103,7 @@ func getLogContextHandler(client *graylog.Client) func(ctx context.Context, requ
 		}
 
 		// Search for messages before
-		var messagesBefore []graylog.MessageWrapper
+		messagesBefore := make([]graylog.MessageWrapper, 0)
 		if before > 0 {
 			beforeParams := graylog.SearchParams{
 				Query:     "*",
@@ -133,7 +133,7 @@ func getLogContextHandler(client *graylog.Client) func(ctx context.Context, requ
 		}
 
 		// Search for messages after
-		var messagesAfter []graylog.MessageWrapper
+		messagesAfter := make([]graylog.MessageWrapper, 0)
 		if after > 0 {
 			afterParams := graylog.SearchParams{
 				Query:     "*",
@@ -303,12 +303,8 @@ func contextTargetMetadata(target any) (id, timestamp, index string) {
 
 func truncateContextMessages(result map[string]any, maxLen int) {
 	// Truncate target message
-	switch target := result["target_message"].(type) {
-	case *graylog.MessageWrapper:
+	if target, ok := result["target_message"].(*graylog.MessageWrapper); ok && target != nil {
 		target.Message.Message = truncateString(target.Message.Message, maxLen)
-	case graylog.MessageWrapper:
-		target.Message.Message = truncateString(target.Message.Message, maxLen)
-		result["target_message"] = target
 	}
 
 	// Truncate before messages
