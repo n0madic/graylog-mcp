@@ -43,9 +43,14 @@ func getLogContextTool() mcp.Tool {
 	)
 }
 
-func getLogContextHandler(client *graylog.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.Params.Arguments
+		c := getClient(ctx)
+		if c == nil {
+			return toolError("no Graylog credentials: Authorization header required"), nil
+		}
+
+		args := request.GetArguments()
 
 		messageID := getStringParam(args, "message_id")
 		if messageID == "" {
@@ -81,7 +86,7 @@ func getLogContextHandler(client *graylog.Client) func(ctx context.Context, requ
 		}
 
 		// Fetch the target message
-		target, err := client.GetMessage(ctx, index, messageID)
+		target, err := c.GetMessage(ctx, index, messageID)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
 				return toolError(apiErr.Error()), nil
@@ -114,7 +119,7 @@ func getLogContextHandler(client *graylog.Client) func(ctx context.Context, requ
 				Fields:    fields,
 				StreamIDs: streamIDs,
 			}
-			beforeResp, err := client.Search(ctx, beforeParams)
+			beforeResp, err := c.Search(ctx, beforeParams)
 			if err != nil {
 				result["before_error"] = err.Error()
 			} else {
@@ -144,7 +149,7 @@ func getLogContextHandler(client *graylog.Client) func(ctx context.Context, requ
 				Fields:    fields,
 				StreamIDs: streamIDs,
 			}
-			afterResp, err := client.Search(ctx, afterParams)
+			afterResp, err := c.Search(ctx, afterParams)
 			if err != nil {
 				result["after_error"] = err.Error()
 			} else {

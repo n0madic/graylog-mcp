@@ -18,12 +18,16 @@ func listFieldsTool() mcp.Tool {
 	)
 }
 
-func listFieldsHandler(client *graylog.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func listFieldsHandler(getClient ClientFunc) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.Params.Arguments
+		args := request.GetArguments()
 		nameFilter := strings.ToLower(getStringParam(args, "name_filter"))
 
-		resp, err := client.GetFields(ctx)
+		c := getClient(ctx)
+		if c == nil {
+			return toolError("no Graylog credentials: Authorization header required"), nil
+		}
+		resp, err := c.GetFields(ctx)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
 				return toolError(apiErr.Error()), nil

@@ -136,7 +136,7 @@ Each tool handler:
 
 ## MCP SDK
 
-Uses `github.com/mark3labs/mcp-go` v0.26.0:
+Uses `github.com/mark3labs/mcp-go` v0.44.0:
 - `server.NewMCPServer(name, version, opts...)` — creates server
 - `s.AddTool(tool, handler)` — registers a tool
 - `mcp.NewTool(name, opts...)` — defines tool schema with `mcp.WithString/WithNumber/WithBoolean`
@@ -164,12 +164,14 @@ Follow the pattern of existing tools — each file is self-contained with tool d
 
 | Env var | CLI flag | Required | Default | Description |
 |---------|----------|----------|---------|-------------|
-| `GRAYLOG_URL` | `--url` | yes | — | Graylog base URL |
-| `GRAYLOG_USERNAME` | `--username` | if no token | — | Basic auth username |
-| `GRAYLOG_PASSWORD` | `--password` | if no token | — | Basic auth password |
-| `GRAYLOG_TOKEN` | `--token` | if no user/pass | — | API access token (alternative to username/password) |
+| `GRAYLOG_URL` | `--url` | stdio: yes; http: no | — | Graylog base URL (http mode: override per-request via `X-Graylog-URL` header) |
+| `GRAYLOG_USERNAME` | `--username` | stdio only, if no token | — | Basic auth username |
+| `GRAYLOG_PASSWORD` | `--password` | stdio only, if no token | — | Basic auth password |
+| `GRAYLOG_TOKEN` | `--token` | stdio only, if no user/pass | — | API access token (alternative to username/password) |
 | `GRAYLOG_TLS_SKIP_VERIFY` | `--tls-skip-verify` | no | false | Skip TLS verification |
 | `GRAYLOG_TIMEOUT` | `--timeout` | no | 30s | HTTP request timeout |
+| `GRAYLOG_MCP_TRANSPORT` | `--transport` | no | stdio | Transport: `stdio` or `http` |
+| `GRAYLOG_MCP_HTTP_BIND` | `--bind` | no | 0.0.0.0:8090 | HTTP listen address (http transport only) |
 
 CLI flags override env vars.
 

@@ -70,7 +70,7 @@ func TestGetLogContextDedupUsesOverfetchAndRemovesOverlap(t *testing.T) {
 	defer server.Close()
 
 	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
-	handler := getLogContextHandler(client)
+	handler := getLogContextHandler(func(_ context.Context) *graylog.Client { return client })
 
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
@@ -168,7 +168,7 @@ func TestGetLogContextWithoutDedupSkipsOverfetchAndSignalsShortfall(t *testing.T
 	defer server.Close()
 
 	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
-	handler := getLogContextHandler(client)
+	handler := getLogContextHandler(func(_ context.Context) *graylog.Client { return client })
 
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
@@ -312,7 +312,7 @@ func TestGetLogContextFieldsFiltering(t *testing.T) {
 	defer server.Close()
 
 	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
-	handler := getLogContextHandler(client)
+	handler := getLogContextHandler(func(_ context.Context) *graylog.Client { return client })
 
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{

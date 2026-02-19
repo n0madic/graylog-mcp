@@ -2,13 +2,12 @@ package tools
 
 import (
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/n0madic/graylog-mcp/graylog"
 )
 
-func RegisterAll(s *server.MCPServer, client *graylog.Client) {
-	s.AddTool(searchLogsTool(), searchLogsHandler(client))
-	s.AddTool(listStreamsTool(), listStreamsHandler(client))
-	s.AddTool(listFieldsTool(), listFieldsHandler(client))
-	s.AddTool(getLogContextTool(), getLogContextHandler(client))
-	s.AddTool(aggregateLogsTool(), aggregateLogsHandler(client))
+func RegisterAll(s *server.MCPServer, getClient ClientFunc) {
+	s.AddTool(searchLogsTool(), searchLogsHandler(getClient))
+	s.AddTool(listStreamsTool(), listStreamsHandler(getClient))
+	s.AddTool(listFieldsTool(), listFieldsHandler(getClient))
+	s.AddTool(getLogContextTool(), getLogContextHandler(getClient))
+	s.AddTool(aggregateLogsTool(), aggregateLogsHandler(getClient))
 }

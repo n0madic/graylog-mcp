@@ -52,9 +52,9 @@ func searchLogsTool() mcp.Tool {
 	)
 }
 
-func searchLogsHandler(client *graylog.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.Params.Arguments
+		args := request.GetArguments()
 
 		query := getStringParam(args, "query")
 		if query == "" {
@@ -93,7 +93,11 @@ func searchLogsHandler(client *graylog.Client) func(ctx context.Context, request
 
 		maxResultSize := getIntParam(args, "max_result_size", 50000)
 
-		return executeSearch(ctx, client, params, getBoolParam(args, "deduplicate"), maxResultSize)
+		c := getClient(ctx)
+		if c == nil {
+			return toolError("no Graylog credentials: Authorization header required"), nil
+		}
+		return executeSearch(ctx, c, params, getBoolParam(args, "deduplicate"), maxResultSize)
 	}
 }
 

@@ -73,9 +73,9 @@ func aggregateLogsTool() mcp.Tool {
 	)
 }
 
-func aggregateLogsHandler(client *graylog.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.Params.Arguments
+		args := request.GetArguments()
 
 		query := getStringParam(args, "query")
 		if query == "" {
@@ -133,7 +133,11 @@ func aggregateLogsHandler(client *graylog.Client) func(ctx context.Context, requ
 			req.Streams = []string{streamID}
 		}
 
-		resp, err := client.Aggregate(ctx, req)
+		c := getClient(ctx)
+		if c == nil {
+			return toolError("no Graylog credentials: Authorization header required"), nil
+		}
+		resp, err := c.Aggregate(ctx, req)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
 				if apiErr.StatusCode == 400 && strings.Contains(apiErr.Body, "script_exception") {

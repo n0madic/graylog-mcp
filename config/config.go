@@ -16,6 +16,8 @@ type Config struct {
 	Token         string
 	TLSSkipVerify bool
 	Timeout       time.Duration
+	Transport     string // "stdio" or "http"
+	Bind          string // HTTP listen address, e.g. "0.0.0.0:8090"
 }
 
 func Load() (*Config, error) {
@@ -27,6 +29,18 @@ func Load() (*Config, error) {
 	flag.StringVar(&cfg.Token, "token", os.Getenv("GRAYLOG_TOKEN"), "Graylog API access token (alternative to username/password)")
 	tlsSkipVerifyDefault, _ := strconv.ParseBool(os.Getenv("GRAYLOG_TLS_SKIP_VERIFY"))
 	flag.BoolVar(&cfg.TLSSkipVerify, "tls-skip-verify", tlsSkipVerifyDefault, "Skip TLS certificate verification")
+
+	transportDefault := os.Getenv("GRAYLOG_MCP_TRANSPORT")
+	if transportDefault == "" {
+		transportDefault = "stdio"
+	}
+	flag.StringVar(&cfg.Transport, "transport", transportDefault, `Transport type: "stdio" or "http"`)
+
+	bindDefault := os.Getenv("GRAYLOG_MCP_HTTP_BIND")
+	if bindDefault == "" {
+		bindDefault = "0.0.0.0:8090"
+	}
+	flag.StringVar(&cfg.Bind, "bind", bindDefault, `HTTP listen address (http transport only), e.g. "0.0.0.0:8090"`)
 
 	defaultTimeout := 30 * time.Second
 	if t := os.Getenv("GRAYLOG_TIMEOUT"); t != "" {
@@ -47,27 +61,40 @@ func Load() (*Config, error) {
 		}
 	})
 
-	if cfg.GraylogURL == "" {
+	if cfg.Transport != "stdio" && cfg.Transport != "http" {
+		return nil, fmt.Errorf("invalid transport %q: must be \"stdio\" or \"http\"", cfg.Transport)
+	}
+
+	// In http transport, GRAYLOG_URL can be omitted and supplied per-request via X-Graylog-URL header.
+	if cfg.GraylogURL == "" && cfg.Transport == "stdio" {
 		return nil, fmt.Errorf("GRAYLOG_URL is required (env or --url flag)")
 	}
 
-	parsedURL, err := url.Parse(cfg.GraylogURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid GRAYLOG_URL: %w", err)
-	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return nil, fmt.Errorf("GRAYLOG_URL must use http or https scheme, got %q", parsedURL.Scheme)
+	if cfg.GraylogURL != "" {
+		parsedURL, err := url.Parse(cfg.GraylogURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid GRAYLOG_URL: %w", err)
+		}
+		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			return nil, fmt.Errorf("GRAYLOG_URL must use http or https scheme, got %q", parsedURL.Scheme)
+		}
 	}
 
 	if cfg.TLSSkipVerify {
 		fmt.Fprintf(os.Stderr, "WARNING: TLS certificate verification is disabled. Credentials may be vulnerable to interception.\n")
 	}
 
-	hasToken := cfg.Token != ""
-	hasCredentials := cfg.Username != "" && cfg.Password != ""
-
-	if !hasToken && !hasCredentials {
-		return nil, fmt.Errorf("authentication required: set GRAYLOG_TOKEN (env or --token flag) or both GRAYLOG_USERNAME and GRAYLOG_PASSWORD")
+	// In http transport, credentials are provided per-request via Authorization header.
+	// In stdio transport, static credentials are required at startup.
+	if cfg.Transport == "http" && (cfg.Token != "" || cfg.Username != "" || cfg.Password != "") {
+		fmt.Fprintf(os.Stderr, "WARNING: Graylog token or username/password are ignored in http transport mode; credentials are provided per-request via the Authorization header.\n")
+	}
+	if cfg.Transport == "stdio" {
+		hasToken := cfg.Token != ""
+		hasCredentials := cfg.Username != "" && cfg.Password != ""
+		if !hasToken && !hasCredentials {
+			return nil, fmt.Errorf("authentication required: set GRAYLOG_TOKEN (env or --token flag) or both GRAYLOG_USERNAME and GRAYLOG_PASSWORD")
+		}
 	}
 
 	return cfg, nil

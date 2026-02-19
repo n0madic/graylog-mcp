@@ -1,13 +1,20 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/n0madic/graylog-mcp/graylog"
 )
+
+// ClientFunc resolves the Graylog client for a given request context.
+// In stdio mode it returns the static client ignoring the context;
+// in HTTP mode it extracts the per-request client injected by the auth middleware.
+type ClientFunc func(ctx context.Context) *graylog.Client
 
 // truncateString truncates s to at most maxBytes bytes, ensuring the cut
 // happens at a valid UTF-8 boundary. If truncation occurs, "...[truncated]"

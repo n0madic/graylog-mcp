@@ -17,12 +17,16 @@ func listStreamsTool() mcp.Tool {
 	)
 }
 
-func listStreamsHandler(client *graylog.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func listStreamsHandler(getClient ClientFunc) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.Params.Arguments
+		args := request.GetArguments()
 		titleFilter := strings.ToLower(getStringParam(args, "title_filter"))
 
-		resp, err := client.GetStreams(ctx)
+		c := getClient(ctx)
+		if c == nil {
+			return toolError("no Graylog credentials: Authorization header required"), nil
+		}
+		resp, err := c.GetStreams(ctx)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
 				return toolError(apiErr.Error()), nil

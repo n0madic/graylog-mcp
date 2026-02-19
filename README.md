@@ -41,12 +41,14 @@ The server is configured via environment variables or CLI flags. CLI flags take 
 
 | Environment variable | CLI flag | Required | Default | Description |
 |---|---|---|---|---|
-| `GRAYLOG_URL` | `--url` | Yes | - | Graylog base URL |
+| `GRAYLOG_URL` | `--url` | stdio: yes; http: no | - | Graylog base URL (http mode: can be passed per-request via `X-Graylog-URL` header instead) |
 | `GRAYLOG_USERNAME` | `--username` | If no token | - | Username for Basic Auth |
 | `GRAYLOG_PASSWORD` | `--password` | If no token | - | Password for Basic Auth |
 | `GRAYLOG_TOKEN` | `--token` | If no credentials | - | API access token |
 | `GRAYLOG_TLS_SKIP_VERIFY` | `--tls-skip-verify` | No | `false` | Skip TLS certificate verification |
 | `GRAYLOG_TIMEOUT` | `--timeout` | No | `30s` | HTTP request timeout |
+| `GRAYLOG_MCP_TRANSPORT` | `--transport` | No | `stdio` | Transport: `stdio` or `http` |
+| `GRAYLOG_MCP_HTTP_BIND` | `--bind` | No | `0.0.0.0:8090` | HTTP listen address (http transport only) |
 
 ### Authentication
 
@@ -56,6 +58,18 @@ Two authentication methods are supported (at least one is required):
 2. **API access token** - a Graylog access token (uses Basic Auth with `your_token:token` convention)
 
 If both are provided, the token takes precedence.
+
+## Transport modes
+
+### stdio (default)
+
+The binary is spawned as a subprocess by the MCP client. Credentials are configured via environment variables at startup. This is the mode used by Claude Desktop, Claude Code, and Cursor.
+
+### http (Streamable HTTP)
+
+The server listens for HTTP connections using the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) (spec 2025-03-26). Designed for containerized deployments and tools like n8n that connect to MCP servers over the network.
+
+In http mode, `GRAYLOG_URL` is optional on the server — it can be passed per-request via the `X-Graylog-URL` HTTP header. Similarly, credentials can be forwarded per-request via the `Authorization` header. This allows a single server instance to serve multiple pipelines, each with its own Graylog target and credentials. The MCP server only ever returns tool results to the LLM — credentials are never exposed.
 
 ## Usage with Claude Desktop
 
@@ -100,6 +114,43 @@ claude mcp add graylog \
   --env GRAYLOG_TOKEN=your_access_token_here \
   -- graylog-mcp
 ```
+
+## Usage with n8n
+
+Run the server in http mode using Docker Compose. No Graylog-specific config is needed on the server if you pass credentials per-request from n8n:
+
+```yaml
+services:
+  graylog-mcp:
+    image: ghcr.io/n0madic/graylog-mcp:latest
+    environment:
+      GRAYLOG_MCP_TRANSPORT: http
+    ports:
+      - "8090:8090"
+```
+
+Or set a server-level default URL if all pipelines point to the same Graylog instance:
+
+```yaml
+services:
+  graylog-mcp:
+    image: ghcr.io/n0madic/graylog-mcp:latest
+    environment:
+      GRAYLOG_MCP_TRANSPORT: http
+      GRAYLOG_URL: https://graylog.internal
+    ports:
+      - "8090:8090"
+```
+
+**n8n MCP credential configuration:**
+
+| Field | Value |
+|---|---|
+| MCP Server URL | `http://graylog-mcp:8090/mcp` |
+| Header `X-Graylog-URL` | `https://graylog.example.com` (overrides server `GRAYLOG_URL`; omit if already set on the server) |
+| Header `Authorization` | `Bearer <graylog_api_token>` or `Basic base64(username:password)` |
+
+Each n8n pipeline uses its own credential with its own token or username — Graylog enforces per-user access rights on its side. The LLM only ever sees tool results.
 
 ## Tools
 
@@ -188,11 +239,7 @@ Retrieve messages surrounding a specific log entry. Useful for understanding the
 | `stream_id` | string | No | Restrict context search to a specific stream |
 | `deduplicate` | boolean | No | Deduplicate by message ID and enable overfetch for better context fill (default: `true`) |
 
-`get_log_context` response also includes context fill metadata:
-
-- `before_requested`, `after_requested` - requested context sizes
-- `before_returned`, `after_returned` - actual returned message counts
-- `context_incomplete` - `true` when fewer messages were found than requested
+Response includes `context_incomplete: true` when fewer messages were found than requested (e.g. at beginning/end of log stream or due to response size limits).
 
 ## Example prompts
 
