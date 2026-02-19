@@ -10,6 +10,13 @@ import (
 	"github.com/n0madic/graylog-mcp/graylog"
 )
 
+// nonAggregatableFields are Elasticsearch analyzed text fields that cannot be used
+// for terms aggregation grouping — they are tokenized and have no keyword sub-field.
+var nonAggregatableFields = map[string]bool{
+	"message":      true,
+	"full_message": true,
+}
+
 var validAggFunctions = map[string]bool{
 	"count":        true,
 	"avg":          true,
@@ -105,6 +112,16 @@ func aggregateLogsHandler(client *graylog.Client) func(ctx context.Context, requ
 
 		groupBy := parseGroupBy(groupByStr, getIntParam(args, "group_limit", 10))
 
+		for _, g := range groupBy {
+			if nonAggregatableFields[g.Field] {
+				return toolError(fmt.Sprintf(
+					"field '%s' is a full-text analyzed field and cannot be used for group_by aggregation. "+
+						"Use keyword fields like 'source', 'level', 'facility', or your own indexed keyword fields instead.",
+					g.Field,
+				)), nil
+			}
+		}
+
 		req := graylog.ScriptingAggregateRequest{
 			Query:     query,
 			TimeRange: timeRange,
@@ -119,6 +136,13 @@ func aggregateLogsHandler(client *graylog.Client) func(ctx context.Context, requ
 		resp, err := client.Aggregate(ctx, req)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
+				if apiErr.StatusCode == 400 && strings.Contains(apiErr.Body, "script_exception") {
+					return toolError(
+						"Aggregation failed: Elasticsearch cannot group by one or more of the requested fields. " +
+							"Analyzed text fields (e.g. 'message', 'full_message') are not supported in group_by — " +
+							"use keyword fields like 'source', 'level', 'facility' instead.",
+					), nil
+				}
 				return toolError(apiErr.Error()), nil
 			}
 			return toolError("Aggregate failed: " + err.Error()), nil
