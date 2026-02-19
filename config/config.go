@@ -27,7 +27,14 @@ func Load() (*Config, error) {
 	flag.StringVar(&cfg.Username, "username", os.Getenv("GRAYLOG_USERNAME"), "Graylog username")
 	flag.StringVar(&cfg.Password, "password", os.Getenv("GRAYLOG_PASSWORD"), "Graylog password")
 	flag.StringVar(&cfg.Token, "token", os.Getenv("GRAYLOG_TOKEN"), "Graylog API access token (alternative to username/password)")
-	tlsSkipVerifyDefault, _ := strconv.ParseBool(os.Getenv("GRAYLOG_TLS_SKIP_VERIFY"))
+	var tlsSkipVerifyDefault bool
+	if v := os.Getenv("GRAYLOG_TLS_SKIP_VERIFY"); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid GRAYLOG_TLS_SKIP_VERIFY %q: must be true/false/1/0", v)
+		}
+		tlsSkipVerifyDefault = parsed
+	}
 	flag.BoolVar(&cfg.TLSSkipVerify, "tls-skip-verify", tlsSkipVerifyDefault, "Skip TLS certificate verification")
 
 	transportDefault := os.Getenv("GRAYLOG_MCP_TRANSPORT")

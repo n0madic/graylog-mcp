@@ -140,6 +140,7 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 		resp, err := c.Aggregate(ctx, req)
 		if err != nil {
 			if apiErr, ok := err.(*graylog.APIError); ok {
+				// fragile: depends on Elasticsearch error format returning "script_exception" in body
 				if apiErr.StatusCode == 400 && strings.Contains(apiErr.Body, "script_exception") {
 					return toolError(
 						"Aggregation failed: Elasticsearch cannot group by one or more of the requested fields. " +

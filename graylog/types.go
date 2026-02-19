@@ -205,9 +205,9 @@ type viewsBackendQuery struct {
 }
 
 type viewsFilter struct {
-	Type    string        `json:"type"`
-	Filters []viewsFilter `json:"filters,omitempty"`
-	ID      string        `json:"id,omitempty"`
+	Type    string         `json:"type"`
+	Filters []*viewsFilter `json:"filters,omitempty"`
+	ID      string         `json:"id,omitempty"`
 }
 
 type viewsSearchType struct {

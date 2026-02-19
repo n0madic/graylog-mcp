@@ -64,5 +64,12 @@ func fitResult(result map[string]any, maxSize int, adapter resultAdapter) (*mcp.
 		return toolSuccessJSON(jsonBytes), nil
 	}
 
+	// Defensive: ensure response_truncated is set even if all reduction phases
+	// failed to bring the response below maxSize (e.g. single oversized message).
+	result["response_truncated"] = true
+	jsonBytes, err = json.Marshal(result)
+	if err != nil {
+		return toolError("failed to marshal response: " + err.Error()), nil
+	}
 	return toolSuccessJSON(jsonBytes), nil
 }

@@ -21,7 +21,11 @@ type Client struct {
 }
 
 func NewClient(baseURL, username, password string, tlsSkipVerify bool, timeout time.Duration) *Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	t, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t = &http.Transport{}
+	}
+	transport := t.Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: tlsSkipVerify} //nolint:gosec
 	return &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
@@ -133,9 +137,9 @@ func (c *Client) Search(ctx context.Context, params SearchParams) (*SearchRespon
 	// Build filter for stream IDs
 	var filter *viewsFilter
 	if len(params.StreamIDs) > 0 {
-		streamFilters := make([]viewsFilter, len(params.StreamIDs))
+		streamFilters := make([]*viewsFilter, len(params.StreamIDs))
 		for i, id := range params.StreamIDs {
-			streamFilters[i] = viewsFilter{Type: "stream", ID: id}
+			streamFilters[i] = &viewsFilter{Type: "stream", ID: id}
 		}
 		filter = &viewsFilter{Type: "or", Filters: streamFilters}
 	}
@@ -281,15 +285,5 @@ func (c *Client) GetMessage(ctx context.Context, index, messageID string) (*Mess
 		return nil, fmt.Errorf("parsing message response: %w", err)
 	}
 
-	fieldsJSON, err := json.Marshal(raw.Message.Fields)
-	if err != nil {
-		return nil, fmt.Errorf("re-marshaling message fields: %w", err)
-	}
-
-	var msg Message
-	if err := json.Unmarshal(fieldsJSON, &msg); err != nil {
-		return nil, fmt.Errorf("parsing message fields: %w", err)
-	}
-
-	return &MessageWrapper{Message: msg, Index: raw.Index}, nil
+	return &MessageWrapper{Message: messageFromMap(raw.Message.Fields), Index: raw.Index}, nil
 }

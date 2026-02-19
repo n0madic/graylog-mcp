@@ -85,10 +85,10 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 		}
 		b, err := json.Marshal(sortedMap(data))
 		if err != nil {
-			fmt.Fprintf(h, "%v", sortedMap(data))
-		} else {
-			h.Write(b)
+			// json.Marshal on [][2]any with JSON-safe values should never fail.
+			panic("unreachable: json.Marshal on message data should never fail: " + err.Error())
 		}
+		h.Write(b)
 	} else {
 		all := messageToMap(msg)
 		filtered := make(map[string]any)
@@ -100,15 +100,21 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 		}
 		b, err := json.Marshal(sortedMap(filtered))
 		if err != nil {
-			fmt.Fprintf(h, "%v", sortedMap(filtered))
-		} else {
-			h.Write(b)
+			// json.Marshal on [][2]any with JSON-safe values should never fail.
+			panic("unreachable: json.Marshal on message data should never fail: " + err.Error())
 		}
+		h.Write(b)
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+// messageToMap builds a flat map from a graylog.Message for hashing.
+// It intentionally accesses struct fields directly rather than calling Message
+// methods (MarshalJSON/ToFilteredMap) to avoid introducing a dependency on
+// graylog package internals beyond the Message type itself — keeping this package
+// focused on deduplication logic. Only source, message, and Extra are included;
+// _id and timestamp are excluded from hashing via shouldSkipField.
 func messageToMap(msg graylog.Message) map[string]any {
 	result := map[string]any{
 		"source":  msg.Source,

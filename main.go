@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -52,6 +53,7 @@ func main() {
 		)
 
 		fmt.Fprintf(os.Stderr, "Graylog MCP server listening on %s (Streamable HTTP /mcp)\n", cfg.Bind)
+		fmt.Fprintf(os.Stderr, "WARNING: HTTP transport runs without TLS. Authorization headers are transmitted in plaintext. Use a TLS-terminating reverse proxy in production.\n")
 
 		if err := http.ListenAndServe(cfg.Bind, authMiddleware(cfg)(httpSrv)); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
@@ -76,6 +78,15 @@ func main() {
 	}
 }
 
+// writeJSONError writes a JSON error response. The message is JSON-encoded to
+// prevent injection of special characters (", \, newlines) from untrusted input.
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	b, _ := json.Marshal(map[string]string{"error": msg})
+	w.Write(b) //nolint:errcheck
+}
+
 // authMiddleware resolves the Graylog URL and credentials from request headers and
 // injects a per-request *graylog.Client into the context. The MCP server and LLM
 // never see credentials or the target URL — both are fully transparent to the protocol.
@@ -93,22 +104,22 @@ func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				graylogURL = cfg.GraylogURL
 			}
 			if graylogURL == "" {
-				http.Error(w, `{"error":"Graylog URL required"}`, http.StatusBadRequest)
+				writeJSONError(w, "Graylog URL required", http.StatusBadRequest)
 				return
 			}
 			if err := validateGraylogURL(graylogURL); err != nil {
-				http.Error(w, `{"error":"invalid X-Graylog-URL: `+err.Error()+`"}`, http.StatusBadRequest)
+				writeJSONError(w, "invalid X-Graylog-URL: "+err.Error(), http.StatusBadRequest)
 				return
 			}
 
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, `{"error":"Authorization header required"}`, http.StatusUnauthorized)
+				writeJSONError(w, "Authorization header required", http.StatusUnauthorized)
 				return
 			}
 			client := clientFromAuthHeader(authHeader, graylogURL, cfg)
 			if client == nil {
-				http.Error(w, `{"error":"invalid Authorization header: use Bearer <token> or Basic base64(user:pass)"}`, http.StatusUnauthorized)
+				writeJSONError(w, "invalid Authorization header: use Bearer <token> or Basic base64(user:pass)", http.StatusUnauthorized)
 				return
 			}
 

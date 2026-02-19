@@ -180,9 +180,6 @@ func executeSearch(ctx context.Context, client *graylog.Client, params graylog.S
 		return fitSearchResult(result, maxResultSize, true)
 	}
 
-	// Restore original limit for non-dedup path (shouldn't differ, but be safe)
-	params.Limit = requestedLimit
-
 	messages := make([]map[string]any, len(resp.Messages))
 	for i, wrapper := range resp.Messages {
 		messages[i] = map[string]any{
