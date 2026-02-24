@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/n0madic/graylog-mcp/config"
@@ -63,7 +64,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Graylog MCP server listening on %s (Streamable HTTP /mcp)\n", cfg.Bind)
 		fmt.Fprintf(os.Stderr, "WARNING: HTTP transport runs without TLS. Authorization headers are transmitted in plaintext. Use a TLS-terminating reverse proxy in production.\n")
 
-		if err := http.ListenAndServe(cfg.Bind, authMiddleware(cfg, baseClient)(httpSrv)); err != nil {
+		srv := &http.Server{
+			Addr:              cfg.Bind,
+			Handler:           authMiddleware(cfg, baseClient)(httpSrv),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		if err := srv.ListenAndServe(); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 			os.Exit(1)
 		}

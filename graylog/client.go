@@ -271,11 +271,11 @@ func (c *Client) Search(ctx context.Context, params SearchParams) (*SearchRespon
 	// Extract results from Views response
 	queryResult, ok := viewsResp.Results["q1"]
 	if !ok {
-		return &SearchResponse{}, nil
+		return nil, fmt.Errorf("unexpected Graylog response: missing query result 'q1'")
 	}
 	searchTypeResult, ok := queryResult.SearchTypes["msgs"]
 	if !ok {
-		return &SearchResponse{}, nil
+		return nil, fmt.Errorf("unexpected Graylog response: missing search type 'msgs' in query result")
 	}
 
 	// Convert viewsResultMessage → MessageWrapper directly from map

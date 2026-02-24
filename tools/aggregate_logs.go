@@ -119,6 +119,9 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 			return toolError(err.Error()), nil
 		}
 		groupBy := parseGroupBy(groupByStr, groupLimit)
+		if len(groupBy) == 0 {
+			return toolError("'group_by' must contain at least one non-empty field name"), nil
+		}
 
 		for _, g := range groupBy {
 			if nonAggregatableFields[g.Field] {
