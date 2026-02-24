@@ -143,3 +143,25 @@ func TestHashMessage_ignoresIDAndTimestamp(t *testing.T) {
 		t.Error("hash should ignore _id and timestamp fields")
 	}
 }
+
+func TestHashMessageDoesNotPanicOnNonMarshalableExtra(t *testing.T) {
+	msg := graylog.Message{
+		ID:      "id-1",
+		Source:  "host",
+		Message: "msg",
+		Extra: map[string]any{
+			"bad": func() {},
+		},
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("hashMessage panicked with non-marshable Extra: %v", r)
+		}
+	}()
+
+	h := hashMessage(msg, nil)
+	if h == "" {
+		t.Fatal("expected non-empty hash")
+	}
+}

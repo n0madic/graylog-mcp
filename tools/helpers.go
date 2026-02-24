@@ -85,6 +85,44 @@ func getIntParam(args map[string]any, key string, defaultVal int) int {
 	return defaultVal
 }
 
+func getStrictNonNegativeIntParam(args map[string]any, key string, defaultVal int) (int, error) {
+	v, ok := args[key]
+	if !ok {
+		return defaultVal, nil
+	}
+
+	var value int
+	switch n := v.(type) {
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) || math.Trunc(n) != n {
+			return 0, fmt.Errorf("'%s' must be an integer", key)
+		}
+		if n > math.MaxInt32 || n < math.MinInt32 {
+			return 0, fmt.Errorf("'%s' is out of range", key)
+		}
+		value = int(n)
+	case int:
+		value = n
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("'%s' must be an integer", key)
+		}
+		if i > math.MaxInt32 || i < math.MinInt32 {
+			return 0, fmt.Errorf("'%s' is out of range", key)
+		}
+		value = int(i)
+	default:
+		return 0, fmt.Errorf("'%s' must be an integer", key)
+	}
+
+	if value < 0 {
+		return 0, fmt.Errorf("'%s' must be >= 0", key)
+	}
+
+	return value, nil
+}
+
 func getBoolParam(args map[string]any, key string) bool {
 	if v, ok := args[key]; ok {
 		if b, ok := v.(bool); ok {

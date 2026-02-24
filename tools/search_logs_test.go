@@ -7,8 +7,83 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/n0madic/graylog-mcp/graylog"
 )
+
+func TestSearchLogsHandlerRejectsInvalidNumericParams(t *testing.T) {
+	client := graylog.NewClient("https://graylog.example.com", "token", "token", false, 2*time.Second)
+	handler := searchLogsHandler(func(_ context.Context) *graylog.Client { return client })
+
+	tests := []struct {
+		name string
+		args map[string]any
+	}{
+		{name: "negative offset", args: map[string]any{"query": "*", "offset": float64(-1)}},
+		{name: "fractional offset", args: map[string]any{"query": "*", "offset": 1.5}},
+		{name: "negative range", args: map[string]any{"query": "*", "range": float64(-5)}},
+		{name: "fractional range", args: map[string]any{"query": "*", "range": 10.25}},
+		{name: "negative truncate", args: map[string]any{"query": "*", "truncate_message": float64(-1)}},
+		{name: "fractional truncate", args: map[string]any{"query": "*", "truncate_message": 1.1}},
+		{name: "negative max_result_size", args: map[string]any{"query": "*", "max_result_size": float64(-1)}},
+		{name: "fractional max_result_size", args: map[string]any{"query": "*", "max_result_size": 100.5}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := mcp.CallToolRequest{}
+			req.Params.Arguments = tt.args
+
+			result, err := handler(context.Background(), req)
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("expected non-nil result")
+			}
+			if !result.IsError {
+				t.Fatalf("expected IsError=true for invalid args %#v", tt.args)
+			}
+		})
+	}
+}
+
+func TestSearchLogsHandlerSupportsZeroTruncateAndMaxResultSize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/views/search/sync" {
+			http.NotFound(w, r)
+			return
+		}
+		writeViewsSearchResponse(w, 1, []testLogMessage{
+			{ID: "id-1", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc-a", Message: "hello", Index: "idx"},
+		})
+	}))
+	defer server.Close()
+
+	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
+	handler := searchLogsHandler(func(_ context.Context) *graylog.Client { return client })
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"query":            "*",
+		"truncate_message": float64(0),
+		"max_result_size":  float64(0),
+	}
+
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %#v", result)
+	}
+
+	payload := decodeToolResultJSON(t, result)
+	messages, ok := payload["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("expected one message, got %#v", payload["messages"])
+	}
+}
 
 func TestExecuteSearchDedupHonorsLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

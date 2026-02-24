@@ -62,16 +62,16 @@ func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, reques
 			return toolError("'index' parameter is required"), nil
 		}
 
-		before := getIntParam(args, "before", 5)
-		if before < 0 {
-			before = 0
+		before, err := getStrictNonNegativeIntParam(args, "before", 5)
+		if err != nil {
+			return toolError(err.Error()), nil
 		}
 		if before > 500 {
 			before = 500
 		}
-		after := getIntParam(args, "after", 5)
-		if after < 0 {
-			after = 0
+		after, err := getStrictNonNegativeIntParam(args, "after", 5)
+		if err != nil {
+			return toolError(err.Error()), nil
 		}
 		if after > 500 {
 			after = 500

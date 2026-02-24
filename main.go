@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,12 @@ import (
 	"github.com/n0madic/graylog-mcp/graylog"
 	"github.com/n0madic/graylog-mcp/tools"
 )
+
+var cgnatBlock *net.IPNet
+
+func init() {
+	_, cgnatBlock, _ = net.ParseCIDR("100.64.0.0/10")
+}
 
 type contextKey string
 
@@ -45,6 +52,7 @@ func main() {
 		// HTTP mode: credentials are provided per-request via the Authorization header.
 		// The auth middleware injects a graylog.Client into the request context before
 		// the MCP server sees the request. The LLM only ever sees tool results.
+		baseClient := graylog.NewSSRFSafeClient(cfg.TLSSkipVerify, cfg.Timeout, isPrivateOrSpecialIP)
 		tools.RegisterAll(s, clientFromContext)
 
 		httpSrv := server.NewStreamableHTTPServer(s,
@@ -55,7 +63,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Graylog MCP server listening on %s (Streamable HTTP /mcp)\n", cfg.Bind)
 		fmt.Fprintf(os.Stderr, "WARNING: HTTP transport runs without TLS. Authorization headers are transmitted in plaintext. Use a TLS-terminating reverse proxy in production.\n")
 
-		if err := http.ListenAndServe(cfg.Bind, authMiddleware(cfg)(httpSrv)); err != nil {
+		if err := http.ListenAndServe(cfg.Bind, authMiddleware(cfg, baseClient)(httpSrv)); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 			os.Exit(1)
 		}
@@ -96,10 +104,11 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) {
 //	X-Graylog-URL:  https://graylog.example.com   (overrides GRAYLOG_URL; optional if server has GRAYLOG_URL set)
 //	Authorization:  Bearer <graylog_api_token>
 //	Authorization:  Basic base64(username:password)
-func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+func authMiddleware(cfg *config.Config, baseClient *graylog.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			graylogURL := r.Header.Get("X-Graylog-URL")
+			rawGraylogURL := r.Header.Get("X-Graylog-URL")
+			graylogURL := rawGraylogURL
 			if graylogURL == "" {
 				graylogURL = cfg.GraylogURL
 			}
@@ -107,9 +116,20 @@ func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				writeJSONError(w, "Graylog URL required", http.StatusBadRequest)
 				return
 			}
+
 			if err := validateGraylogURL(graylogURL); err != nil {
-				writeJSONError(w, "invalid X-Graylog-URL: "+err.Error(), http.StatusBadRequest)
+				if rawGraylogURL != "" {
+					writeJSONError(w, "invalid X-Graylog-URL: "+err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeJSONError(w, "invalid GRAYLOG_URL: "+err.Error(), http.StatusBadRequest)
 				return
+			}
+			if rawGraylogURL != "" {
+				if err := validateGraylogOverrideURL(rawGraylogURL); err != nil {
+					writeJSONError(w, "invalid X-Graylog-URL: "+err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 
 			authHeader := r.Header.Get("Authorization")
@@ -117,7 +137,7 @@ func authMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				writeJSONError(w, "Authorization header required", http.StatusUnauthorized)
 				return
 			}
-			client := clientFromAuthHeader(authHeader, graylogURL, cfg)
+			client := clientFromAuthHeader(authHeader, graylogURL, baseClient)
 			if client == nil {
 				writeJSONError(w, "invalid Authorization header: use Bearer <token> or Basic base64(user:pass)", http.StatusUnauthorized)
 				return
@@ -137,22 +157,71 @@ func validateGraylogURL(raw string) error {
 	if p.Scheme != "http" && p.Scheme != "https" {
 		return fmt.Errorf("must use http or https scheme, got %q", p.Scheme)
 	}
+	if p.Hostname() == "" {
+		return fmt.Errorf("host is required")
+	}
+	if p.User != nil {
+		return fmt.Errorf("userinfo is not allowed")
+	}
+	if p.Fragment != "" {
+		return fmt.Errorf("fragment is not allowed")
+	}
 	return nil
+}
+
+func validateGraylogOverrideURL(raw string) error {
+	p, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	host := p.Hostname()
+	if host == "" {
+		return fmt.Errorf("host is required")
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateOrSpecialIP(ip) {
+			return fmt.Errorf("host resolves to a private or special-use address")
+		}
+		return nil
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("unable to resolve host")
+	}
+	for _, ip := range ips {
+		if isPrivateOrSpecialIP(ip) {
+			return fmt.Errorf("host resolves to a private or special-use address")
+		}
+	}
+	return nil
+}
+
+func isPrivateOrSpecialIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() ||
+		ip.IsMulticast() || ip.IsInterfaceLocalMulticast() || cgnatBlock.Contains(ip)
 }
 
 // clientFromAuthHeader builds a graylog.Client from an Authorization header value.
 // Bearer tokens use Graylog's token auth convention (Basic token_value:"token").
-func clientFromAuthHeader(authHeader, graylogURL string, cfg *config.Config) *graylog.Client {
-	switch {
-	case strings.HasPrefix(authHeader, "Bearer "):
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token == "" {
-			return nil
-		}
-		return graylog.NewClient(graylogURL, token, "token", cfg.TLSSkipVerify, cfg.Timeout)
+func clientFromAuthHeader(authHeader, graylogURL string, baseClient *graylog.Client) *graylog.Client {
+	authHeader = strings.TrimSpace(authHeader)
+	scheme, credentials, found := strings.Cut(authHeader, " ")
+	if !found {
+		return nil
+	}
+	credentials = strings.TrimSpace(credentials)
+	if credentials == "" {
+		return nil
+	}
 
-	case strings.HasPrefix(authHeader, "Basic "):
-		decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, "Basic "))
+	switch {
+	case strings.EqualFold(scheme, "Bearer"):
+		return baseClient.CloneWithAuth(graylogURL, credentials, "token")
+
+	case strings.EqualFold(scheme, "Basic"):
+		decoded, err := base64.StdEncoding.DecodeString(credentials)
 		if err != nil {
 			return nil
 		}
@@ -160,7 +229,8 @@ func clientFromAuthHeader(authHeader, graylogURL string, cfg *config.Config) *gr
 		if len(parts) != 2 || parts[0] == "" {
 			return nil
 		}
-		return graylog.NewClient(graylogURL, parts[0], parts[1], cfg.TLSSkipVerify, cfg.Timeout)
+		// Empty password is permitted — some Graylog setups allow it.
+		return baseClient.CloneWithAuth(graylogURL, parts[0], parts[1])
 	}
 	return nil
 }

@@ -100,7 +100,11 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 			return toolError("'from' and 'to' must be used together"), nil
 		}
 
-		timeRange, err := buildScriptingTimeRange(from, to, keyword, getIntParam(args, "range", 0))
+		rangeVal, err := getStrictNonNegativeIntParam(args, "range", 0)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		timeRange, err := buildScriptingTimeRange(from, to, keyword, rangeVal)
 		if err != nil {
 			return toolError(err.Error()), nil
 		}
@@ -110,7 +114,11 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 			return toolError("'group_by' parameter is required"), nil
 		}
 
-		groupBy := parseGroupBy(groupByStr, getIntParam(args, "group_limit", 10))
+		groupLimit, err := getStrictNonNegativeIntParam(args, "group_limit", 10)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		groupBy := parseGroupBy(groupByStr, groupLimit)
 
 		for _, g := range groupBy {
 			if nonAggregatableFields[g.Field] {
@@ -161,7 +169,10 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 			"metadata":   resp.Metadata,
 		}
 
-		maxResultSize := getIntParam(args, "max_result_size", 50000)
+		maxResultSize, err := getStrictNonNegativeIntParam(args, "max_result_size", 50000)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
 		return fitAggregateResult(result, maxResultSize)
 	}
 }

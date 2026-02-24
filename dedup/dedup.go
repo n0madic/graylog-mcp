@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 
 	"github.com/n0madic/graylog-mcp/graylog"
@@ -83,12 +84,7 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 				data[f] = v
 			}
 		}
-		b, err := json.Marshal(sortedMap(data))
-		if err != nil {
-			// json.Marshal on [][2]any with JSON-safe values should never fail.
-			panic("unreachable: json.Marshal on message data should never fail: " + err.Error())
-		}
-		h.Write(b)
+		marshalToHash(h, sortedMap(data))
 	} else {
 		all := messageToMap(msg)
 		filtered := make(map[string]any)
@@ -98,15 +94,19 @@ func hashMessage(msg graylog.Message, hashFields []string) string {
 			}
 			filtered[k] = v
 		}
-		b, err := json.Marshal(sortedMap(filtered))
-		if err != nil {
-			// json.Marshal on [][2]any with JSON-safe values should never fail.
-			panic("unreachable: json.Marshal on message data should never fail: " + err.Error())
-		}
-		h.Write(b)
+		marshalToHash(h, sortedMap(filtered))
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func marshalToHash(h io.Writer, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		h.Write([]byte(fmt.Sprintf("%v", v))) //nolint:errcheck
+		return
+	}
+	h.Write(b) //nolint:errcheck
 }
 
 // messageToMap builds a flat map from a graylog.Message for hashing.

@@ -67,7 +67,10 @@ func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request m
 			return toolError("'from' and 'to' must be used together"), nil
 		}
 
-		limit := getIntParam(args, "limit", 50)
+		limit, err := getStrictNonNegativeIntParam(args, "limit", 50)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
 		if limit > 10000 {
 			limit = 10000
 		}
@@ -76,22 +79,40 @@ func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request m
 		}
 
 		params := graylog.SearchParams{
-			Query:           query,
-			Range:           getIntParam(args, "range", 0),
-			From:            from,
-			To:              to,
-			Limit:           limit,
-			Offset:          getIntParam(args, "offset", 0),
-			Fields:          getStringParam(args, "fields"),
-			Sort:            getStringParam(args, "sort"),
-			TruncateMessage: getIntParam(args, "truncate_message", 0),
+			Query:  query,
+			From:   from,
+			To:     to,
+			Limit:  limit,
+			Fields: getStringParam(args, "fields"),
+			Sort:   getStringParam(args, "sort"),
 		}
 
 		if streamID := getStringParam(args, "stream_id"); streamID != "" {
 			params.StreamIDs = []string{streamID}
 		}
 
-		maxResultSize := getIntParam(args, "max_result_size", 50000)
+		rangeVal, err := getStrictNonNegativeIntParam(args, "range", 0)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		params.Range = rangeVal
+
+		offset, err := getStrictNonNegativeIntParam(args, "offset", 0)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		params.Offset = offset
+
+		truncateMessage, err := getStrictNonNegativeIntParam(args, "truncate_message", 0)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
+		params.TruncateMessage = truncateMessage
+
+		maxResultSize, err := getStrictNonNegativeIntParam(args, "max_result_size", 50000)
+		if err != nil {
+			return toolError(err.Error()), nil
+		}
 
 		c := getClient(ctx)
 		if c == nil {

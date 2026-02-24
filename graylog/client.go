@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -35,6 +36,80 @@ func NewClient(baseURL, username, password string, tlsSkipVerify bool, timeout t
 			Timeout:   timeout,
 			Transport: transport,
 		},
+	}
+}
+
+// NewSSRFSafeClient creates a Client whose transport resolves DNS and checks
+// every resolved IP against ipBlocker before connecting. This prevents DNS
+// rebinding attacks where a hostname resolves to a public IP at validation time
+// but to a private IP when the HTTP client actually connects.
+func NewSSRFSafeClient(tlsSkipVerify bool, timeout time.Duration, ipBlocker func(net.IP) bool) *Client {
+	t, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t = &http.Transport{}
+	}
+	transport := t.Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: tlsSkipVerify} //nolint:gosec
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport.DialContext = ssrfSafeDialContext(dialer, ipBlocker)
+
+	return &Client{
+		httpClient: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
+	}
+}
+
+// ssrfSafeDialContext returns a DialContext function that resolves DNS itself,
+// checks each IP against ipBlocker, and connects directly to the verified IP.
+func ssrfSafeDialContext(dialer *net.Dialer, ipBlocker func(net.IP) bool) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address %q: %w", addr, err)
+		}
+
+		// If host is already an IP literal, check it directly.
+		if ip := net.ParseIP(host); ip != nil {
+			if ipBlocker(ip) {
+				return nil, fmt.Errorf("connection to %s blocked: private or special-use address", host)
+			}
+			return dialer.DialContext(ctx, network, addr)
+		}
+
+		// Resolve DNS and check every returned IP.
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("no addresses found for %s", host)
+		}
+
+		for _, ipAddr := range ips {
+			if ipBlocker(ipAddr.IP) {
+				return nil, fmt.Errorf("connection to %s (%s) blocked: private or special-use address", host, ipAddr.IP)
+			}
+		}
+
+		// Connect to the first resolved IP directly, preventing a second DNS lookup.
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+	}
+}
+
+// CloneWithAuth returns a lightweight client that reuses the same underlying
+// http.Client/Transport while overriding base URL and credentials.
+func (c *Client) CloneWithAuth(baseURL, username, password string) *Client {
+	if c == nil {
+		return nil
+	}
+	return &Client{
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		username:   username,
+		password:   password,
+		httpClient: c.httpClient,
 	}
 }
 
