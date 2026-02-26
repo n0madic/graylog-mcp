@@ -172,8 +172,6 @@ Search Graylog logs using Lucene query syntax.
 | `fields` | string | No | Comma-separated list of fields to return |
 | `sort` | string | No | Sort order (e.g. `timestamp:desc`) |
 | `deduplicate` | boolean | No | Collapse duplicate messages and show count |
-| `truncate_message` | number | No | Truncate message text to N characters |
-| `max_result_size` | number | No | Max response size in characters (default: 50000) |
 
 > `from` and `to` must be used together. If neither is set, a relative time range is used.
 >
@@ -215,13 +213,11 @@ Aggregate logs using statistical functions with grouping. Uses Graylog's Scripti
 | `range` | number | No | Relative time range in seconds (default: 300) |
 | `from` | string | No | Absolute start time in ISO 8601 format |
 | `to` | string | No | Absolute end time in ISO 8601 format |
-| `timerange_keyword` | string | No | Natural language time range (e.g. `last five minutes`) |
 | `sort` | string | No | Sort direction for the first metric: `asc` or `desc` |
-| `max_result_size` | number | No | Max response size in characters (default: 50000) |
 
 > Supported metric functions: `count`, `avg`, `min`, `max`, `sum`, `stddev`, `variance`, `card`, `percentile`, `latest`, `sumofsquares`.
 >
-> `from`/`to`, `range`, and `timerange_keyword` are mutually exclusive. If none is set, a relative range of 300 seconds is used.
+> `from`/`to` and `range` are mutually exclusive. If neither is set, a relative range of 300 seconds is used.
 
 ### `get_log_context`
 
@@ -237,9 +233,12 @@ Retrieve messages surrounding a specific log entry. Useful for understanding the
 | `after` | number | No | Messages to fetch after the target (default: 5) |
 | `fields` | string | No | Comma-separated list of fields to return |
 | `stream_id` | string | No | Restrict context search to a specific stream |
-| `deduplicate` | boolean | No | Deduplicate by message ID and enable overfetch for better context fill (default: `true`) |
 
-Response includes `context_incomplete: true` when fewer messages were found than requested (e.g. at beginning/end of log stream or due to response size limits).
+Response includes `context_incomplete: true` when fewer messages were found than requested (e.g. at beginning/end of log stream or due to response size limits). Messages are automatically deduplicated by ID with overfetch to fill context windows.
+
+### Response fitting
+
+All tools automatically fit responses within a 50,000-byte limit. When a response exceeds this limit, the server progressively truncates message text and reduces message count. A `response_truncated: true` flag is added when any truncation occurs. Use the `fields` parameter to select specific fields and reduce payload size.
 
 ## Example prompts
 

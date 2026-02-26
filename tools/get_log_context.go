@@ -37,9 +37,6 @@ func getLogContextTool() mcp.Tool {
 		mcp.WithString("stream_id",
 			mcp.Description("Optional stream ID to restrict context search to a specific stream"),
 		),
-		mcp.WithBoolean("deduplicate",
-			mcp.Description("Deduplicate by message ID and enable overfetch to better fill context windows (default: true)."),
-		),
 	)
 }
 
@@ -78,7 +75,6 @@ func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, reques
 		}
 		fields := getStringParam(args, "fields")
 		streamID := getStringParam(args, "stream_id")
-		deduplicate := getBoolParamDefault(args, "deduplicate", true)
 
 		var streamIDs []string
 		if streamID != "" {
@@ -100,12 +96,8 @@ func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, reques
 			"target_message": target,
 		}
 
-		beforeLimit := before + 1
-		afterLimit := after + 1
-		if deduplicate {
-			beforeLimit = min(before*contextOverfetchMultiplier+1, contextMaxFetchLimitPerSide)
-			afterLimit = min(after*contextOverfetchMultiplier+1, contextMaxFetchLimitPerSide)
-		}
+		beforeLimit := min(before*contextOverfetchMultiplier+1, contextMaxFetchLimitPerSide)
+		afterLimit := min(after*contextOverfetchMultiplier+1, contextMaxFetchLimitPerSide)
 
 		// Search for messages before
 		messagesBefore := make([]graylog.MessageWrapper, 0)
@@ -130,9 +122,7 @@ func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, reques
 		for i, j := 0, len(messagesBefore)-1; i < j; i, j = i+1, j-1 {
 			messagesBefore[i], messagesBefore[j] = messagesBefore[j], messagesBefore[i]
 		}
-		if deduplicate {
-			messagesBefore = deduplicateContextMessagesByID(messagesBefore)
-		}
+		messagesBefore = deduplicateContextMessagesByID(messagesBefore)
 		if len(messagesBefore) > before {
 			messagesBefore = messagesBefore[:before]
 		}
@@ -157,9 +147,7 @@ func getLogContextHandler(getClient ClientFunc) func(ctx context.Context, reques
 			}
 		}
 
-		if deduplicate {
-			messagesAfter = deduplicateContextMessagesByID(messagesAfter)
-		}
+		messagesAfter = deduplicateContextMessagesByID(messagesAfter)
 		messagesAfter = removeContextOverlapByID(messagesAfter, messagesBefore)
 		if len(messagesAfter) > after {
 			messagesAfter = messagesAfter[:after]

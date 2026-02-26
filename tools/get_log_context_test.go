@@ -74,11 +74,10 @@ func TestGetLogContextDedupUsesOverfetchAndRemovesOverlap(t *testing.T) {
 
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
-		"message_id":  "target",
-		"index":       "test-index",
-		"before":      float64(3),
-		"after":       float64(3),
-		"deduplicate": true,
+		"message_id": "target",
+		"index":      "test-index",
+		"before":     float64(3),
+		"after":      float64(3),
 	}
 
 	result, err := handler(context.Background(), req)
@@ -117,109 +116,6 @@ func TestGetLogContextDedupUsesOverfetchAndRemovesOverlap(t *testing.T) {
 
 	if contextIncomplete, _ := payload["context_incomplete"].(bool); contextIncomplete {
 		t.Fatal("context_incomplete should be false when both sides are fully filled")
-	}
-}
-
-func TestGetLogContextWithoutDedupSkipsOverfetchAndSignalsShortfall(t *testing.T) {
-	var searchCalls []contextSearchCall
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/messages/test-index/target":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"message": map[string]any{
-					"fields": map[string]any{
-						"_id":       "target",
-						"timestamp": "2024-01-01T00:00:00.000Z",
-						"source":    "svc-target",
-						"message":   "target message",
-					},
-				},
-				"index": "test-index",
-			})
-		case "/api/views/search/sync":
-			call, err := parseContextSearchCall(r)
-			if err != nil {
-				t.Fatalf("failed to parse search call: %v", err)
-			}
-			searchCalls = append(searchCalls, call)
-
-			switch call.Order {
-			case "DESC":
-				writeViewsSearchResponse(w, 3, []testLogMessage{
-					{ID: "target", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc", Message: "target message", Index: "idx"},
-					{ID: "overlap", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc", Message: "overlap", Index: "idx"},
-					{ID: "before-1", Timestamp: "2023-12-31T23:59:59.000Z", Source: "svc", Message: "before1", Index: "idx"},
-				})
-			case "ASC":
-				writeViewsSearchResponse(w, 3, []testLogMessage{
-					{ID: "target", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc", Message: "target message", Index: "idx"},
-					{ID: "overlap", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc", Message: "overlap", Index: "idx"},
-					{ID: "after-1", Timestamp: "2024-01-01T00:00:01.000Z", Source: "svc", Message: "after1", Index: "idx"},
-				})
-			default:
-				t.Fatalf("unexpected sort order %q", call.Order)
-			}
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
-	handler := getLogContextHandler(func(_ context.Context) *graylog.Client { return client })
-
-	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]any{
-		"message_id":  "target",
-		"index":       "test-index",
-		"before":      float64(2),
-		"after":       float64(2),
-		"deduplicate": false,
-	}
-
-	result, err := handler(context.Background(), req)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if len(searchCalls) != 2 {
-		t.Fatalf("expected 2 search calls, got %d", len(searchCalls))
-	}
-
-	descLimit, ascLimit := 0, 0
-	for _, call := range searchCalls {
-		if call.Order == "DESC" {
-			descLimit = call.Limit
-		}
-		if call.Order == "ASC" {
-			ascLimit = call.Limit
-		}
-	}
-	if descLimit != 3 || ascLimit != 3 {
-		t.Fatalf("expected non-overfetch limits 3/3, got DESC=%d ASC=%d", descLimit, ascLimit)
-	}
-
-	payload := decodeToolResultJSON(t, result)
-
-	beforeIDs := extractContextMessageIDs(t, payload, "messages_before")
-	afterIDs := extractContextMessageIDs(t, payload, "messages_after")
-	if !reflect.DeepEqual(beforeIDs, []string{"before-1", "overlap"}) {
-		t.Fatalf("unexpected messages_before ids: %#v", beforeIDs)
-	}
-	if !reflect.DeepEqual(afterIDs, []string{"after-1"}) {
-		t.Fatalf("unexpected messages_after ids: %#v", afterIDs)
-	}
-
-	if contextIncomplete, _ := payload["context_incomplete"].(bool); !contextIncomplete {
-		t.Fatal("context_incomplete should be true when one side is underfilled")
-	}
-	// Numeric echo fields (before_requested etc.) are intentionally omitted from response
-	for _, noiseField := range []string{"before_requested", "after_requested", "before_returned", "after_returned"} {
-		if _, exists := payload[noiseField]; exists {
-			t.Fatalf("%s should not be present in response", noiseField)
-		}
 	}
 }
 

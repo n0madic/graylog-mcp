@@ -43,12 +43,6 @@ func searchLogsTool() mcp.Tool {
 		mcp.WithBoolean("deduplicate",
 			mcp.Description("If true, deduplicate similar messages and show count"),
 		),
-		mcp.WithNumber("truncate_message",
-			mcp.Description("Truncate message field to N characters (0 = no truncation). Useful to reduce output size when messages contain large stack traces."),
-		),
-		mcp.WithNumber("max_result_size",
-			mcp.Description("Maximum size of the response in bytes (default: 50000, 0 = no limit). Response will be automatically truncated to fit within this limit."),
-		),
 	)
 }
 
@@ -103,22 +97,11 @@ func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request m
 		}
 		params.Offset = offset
 
-		truncateMessage, err := getStrictNonNegativeIntParam(args, "truncate_message", 0)
-		if err != nil {
-			return toolError(err.Error()), nil
-		}
-		params.TruncateMessage = truncateMessage
-
-		maxResultSize, err := getStrictNonNegativeIntParam(args, "max_result_size", 50000)
-		if err != nil {
-			return toolError(err.Error()), nil
-		}
-
 		c := getClient(ctx)
 		if c == nil {
 			return toolError("no Graylog credentials: Authorization header required"), nil
 		}
-		return executeSearch(ctx, c, params, getBoolParam(args, "deduplicate"), maxResultSize)
+		return executeSearch(ctx, c, params, getBoolParam(args, "deduplicate"), defaultMaxResultSize)
 	}
 }
 
@@ -152,15 +135,6 @@ func executeSearch(ctx context.Context, client *graylog.Client, params graylog.S
 	if params.Fields != "" {
 		for _, f := range strings.Split(params.Fields, ",") {
 			fieldList = append(fieldList, strings.TrimSpace(f))
-		}
-	}
-
-	// Apply truncate_message to ALL messages before dedup or building result
-	// (fixes bug: was previously skipped for dedup path)
-	truncate := params.TruncateMessage
-	if truncate > 0 {
-		for i := range resp.Messages {
-			resp.Messages[i].Message.Message = truncateString(resp.Messages[i].Message.Message, truncate)
 		}
 	}
 

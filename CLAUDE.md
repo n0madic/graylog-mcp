@@ -32,7 +32,7 @@ go vet ./...
 go build ./...
 ```
 
-There are no tests yet. Verify changes compile with `go build ./...` and pass `go vet ./...`.
+Verify changes compile with `go build ./...`, pass `go vet ./...`, and `go test ./... -count=1`.
 
 ## Project structure
 
@@ -82,8 +82,8 @@ Each tool handler:
 
 ### Parameter access
 - All tool params come from `request.Params.Arguments` (`map[string]any`)
-- Use helpers from `tools/helpers.go`: `getStringParam`, `getIntParam`, `getBoolParam`
-- JSON numbers arrive as `float64` — `getIntParam` handles `float64`, `int`, and `json.Number`
+- Use helpers from `tools/helpers.go`: `getStringParam`, `getStrictNonNegativeIntParam`, `getBoolParam`
+- JSON numbers arrive as `float64` — `getStrictNonNegativeIntParam` handles `float64`, `int`, and `json.Number`
 - Defaults are handled in the helper calls or after extraction (e.g. limit defaults to 50)
 
 ### Message type
@@ -101,7 +101,7 @@ Each tool handler:
 - `client.Aggregate()` posts to `/api/search/aggregate` (Scripting API) — separate from Views API used by search
 - `aggregate_logs` accepts metrics as a comma-separated string parsed into `[]ScriptingMetric`: `"count"`, `"avg:field"`, `"percentile:field:value"`
 - `group_by` is required — Graylog's Scripting API rejects requests without groupings
-- Time range supports three mutually exclusive modes: `timerange_keyword` (natural language), `from`/`to` (absolute ISO8601), `range` (relative seconds, default 300)
+- Time range supports two modes: `from`/`to` (absolute ISO8601) or `range` (relative seconds, default 300)
 - Tabular response (`schema` + `datarows`) is converted to array of named objects for LLM readability
 - Fitting uses `fitResult()` with row-halving reduction; no message truncation phase (aggregation rows have no message bodies)
 
@@ -112,7 +112,7 @@ Each tool handler:
 - Result preserves first occurrence order, aggregates count and message IDs
 - `DedupResult` has custom `MarshalJSON` that omits `_id` from the message (redundant with `message_ids`)
 - `DedupResult.Count` is the authoritative total occurrence count; `message_ids` is capped to 5 but `count` always reflects the full number
-- `CapMessageIDs(results, 5)` is applied immediately after `Deduplicate`, before `fitResult` — the cap is always enforced, even when `max_result_size=0`
+- `CapMessageIDs(results, 5)` is applied immediately after `Deduplicate`, before `fitResult` — the cap is always enforced
 - Dedup response key is `total_raw_results` (not `total_results`) to signal it is the raw Graylog match count, not the unique-group count
 - Dedup response key `unique_in_batch` is the count of unique groups in the fetched batch (not a global unique count)
 
@@ -123,16 +123,15 @@ Each tool handler:
 - Search results include `has_more` boolean for pagination awareness
 
 ### Response size fitting
-- `search_logs` and `aggregate_logs` accept `max_result_size` (default 50000, 0 = no limit)
-- `get_log_context` uses a hardcoded 50000 limit
+- All tools use hardcoded `defaultMaxResultSize` (50000 bytes) — defined in `tools/helpers.go`
 - Generic fitting algorithm in `fitResult()` (`tools/fit_result.go`) with `resultAdapter` callbacks:
   - Phase 1: Progressive message truncation (500 → 200 → 100 → 50 chars)
   - Phase 2: Halve message count repeatedly (`reduceMsgs` returns `false` when can't reduce further)
-  - Last resort (search only): metadata-only response with hint to use `fields`/`truncate_message`
+  - Last resort (search only): metadata-only response with hint to use `fields` parameter
 - `response_truncated: true` flag added when any truncation occurs
-- `truncate_message` is applied to ALL messages before dedup (not skipped for dedup path)
 - Dedup `message_ids` capping (max 5) is done **before** `fitResult`, not inside it — `resultAdapter` has no `capIDs` phase
 - `get_log_context` `reduceMsgs` sets `context_incomplete = true` whenever it reduces the message window, so `context_incomplete` and `response_truncated` stay consistent
+- `get_log_context` always deduplicates by message ID and overfetches to fill context windows
 
 ## MCP SDK
 
@@ -212,4 +211,3 @@ All requests include: `Accept: application/json`, `X-Requested-By: XMLHttpReques
 - `resultAdapter.reduceMsgs` must return `false` when no further reduction is possible to prevent infinite loops in `fitResult`
 - Scripting API's `/api/search/aggregate` requires at least one grouping — `group_by` is mandatory in `aggregate_logs`
 - `aggregate_logs` metrics string parsing: `"count"` (no field), `"avg:field"` (function:field), `"percentile:field:value"` (function:field:config) — validated against a known function set
-- `aggregate_logs` `timerange_keyword` is mutually exclusive with `from`/`to` and `range` — keyword takes precedence if set

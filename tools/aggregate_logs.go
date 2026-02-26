@@ -61,14 +61,8 @@ func aggregateLogsTool() mcp.Tool {
 		mcp.WithString("to",
 			mcp.Description("End time in ISO8601 format. Must be used with 'from'."),
 		),
-		mcp.WithString("timerange_keyword",
-			mcp.Description("Natural language time range (e.g. 'last five minutes'). Mutually exclusive with from/to and range."),
-		),
 		mcp.WithString("sort",
 			mcp.Description("Sort direction for the first metric: 'asc' or 'desc'"),
-		),
-		mcp.WithNumber("max_result_size",
-			mcp.Description("Maximum size of the response in bytes (default: 50000, 0 = no limit). Response will be automatically truncated to fit within this limit."),
 		),
 	)
 }
@@ -94,7 +88,6 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 
 		from := getStringParam(args, "from")
 		to := getStringParam(args, "to")
-		keyword := getStringParam(args, "timerange_keyword")
 
 		if (from == "") != (to == "") {
 			return toolError("'from' and 'to' must be used together"), nil
@@ -104,7 +97,7 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 		if err != nil {
 			return toolError(err.Error()), nil
 		}
-		timeRange, err := buildScriptingTimeRange(from, to, keyword, rangeVal)
+		timeRange, err := buildScriptingTimeRange(from, to, rangeVal)
 		if err != nil {
 			return toolError(err.Error()), nil
 		}
@@ -172,11 +165,7 @@ func aggregateLogsHandler(getClient ClientFunc) func(ctx context.Context, reques
 			"metadata":   resp.Metadata,
 		}
 
-		maxResultSize, err := getStrictNonNegativeIntParam(args, "max_result_size", 50000)
-		if err != nil {
-			return toolError(err.Error()), nil
-		}
-		return fitAggregateResult(result, maxResultSize)
+		return fitAggregateResult(result, defaultMaxResultSize)
 	}
 }
 
@@ -259,14 +248,7 @@ func parseGroupBy(groupByStr string, limit int) []graylog.ScriptingGrouping {
 	return groups
 }
 
-func buildScriptingTimeRange(from, to, keyword string, rangeSeconds int) (graylog.ScriptingTimeRange, error) {
-	if keyword != "" {
-		if from != "" || to != "" {
-			return graylog.ScriptingTimeRange{}, fmt.Errorf("'timerange_keyword' cannot be used with 'from'/'to'")
-		}
-		return graylog.ScriptingTimeRange{Type: "keyword", Keyword: keyword}, nil
-	}
-
+func buildScriptingTimeRange(from, to string, rangeSeconds int) (graylog.ScriptingTimeRange, error) {
 	if from != "" && to != "" {
 		return graylog.ScriptingTimeRange{Type: "absolute", From: from, To: to}, nil
 	}

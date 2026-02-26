@@ -20,16 +20,15 @@ func isHiddenValue(v any) bool {
 }
 
 type SearchParams struct {
-	Query           string
-	Range           int    // seconds, for relative search
-	From            string // ISO8601, for absolute search
-	To              string // ISO8601, for absolute search
-	Limit           int
-	Offset          int
-	Fields          string   // comma-separated
-	Sort            string   // field:asc or field:desc
-	StreamIDs       []string // filter by stream IDs
-	TruncateMessage int      // 0 = no truncation, >0 = max chars for message field
+	Query     string
+	Range     int    // seconds, for relative search
+	From      string // ISO8601, for absolute search
+	To        string // ISO8601, for absolute search
+	Limit     int
+	Offset    int
+	Fields    string   // comma-separated
+	Sort      string   // field:asc or field:desc
+	StreamIDs []string // filter by stream IDs
 }
 
 type SearchResponse struct {

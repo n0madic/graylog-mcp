@@ -11,6 +11,9 @@ import (
 	"github.com/n0madic/graylog-mcp/graylog"
 )
 
+// defaultMaxResultSize is the maximum response size in bytes for search and aggregation tools.
+const defaultMaxResultSize = 50000
+
 // ClientFunc resolves the Graylog client for a given request context.
 // In stdio mode it returns the static client ignoring the context;
 // in HTTP mode it extracts the per-request client injected by the auth middleware.
@@ -63,28 +66,6 @@ func getStringParam(args map[string]any, key string) string {
 	return ""
 }
 
-func getIntParam(args map[string]any, key string, defaultVal int) int {
-	if v, ok := args[key]; ok {
-		switch n := v.(type) {
-		case float64:
-			if math.IsNaN(n) || n > math.MaxInt32 || n < math.MinInt32 {
-				return defaultVal
-			}
-			return int(n)
-		case int:
-			return n
-		case json.Number:
-			if i, err := n.Int64(); err == nil {
-				if i > math.MaxInt32 || i < math.MinInt32 {
-					return defaultVal
-				}
-				return int(i)
-			}
-		}
-	}
-	return defaultVal
-}
-
 func getStrictNonNegativeIntParam(args map[string]any, key string, defaultVal int) (int, error) {
 	v, ok := args[key]
 	if !ok {
@@ -130,15 +111,6 @@ func getBoolParam(args map[string]any, key string) bool {
 		}
 	}
 	return false
-}
-
-func getBoolParamDefault(args map[string]any, key string, defaultVal bool) bool {
-	if v, ok := args[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
-		}
-	}
-	return defaultVal
 }
 
 // filterMessageExtraFields removes Extra map entries not in fieldSet from a Message.
