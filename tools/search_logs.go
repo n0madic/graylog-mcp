@@ -43,6 +43,9 @@ func searchLogsTool() mcp.Tool {
 		mcp.WithBoolean("deduplicate",
 			mcp.Description("If true, deduplicate similar messages and show count"),
 		),
+		mcp.WithBoolean("extract_templates",
+			mcp.Description("If true, extract log templates using pattern mining (ULP). Groups similar messages and replaces dynamic parts with <*>. Mutually exclusive with 'deduplicate'."),
+		),
 	)
 }
 
@@ -97,11 +100,17 @@ func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request m
 		}
 		params.Offset = offset
 
+		deduplicate := getBoolParam(args, "deduplicate")
+		extractTemplates := getBoolParam(args, "extract_templates")
+		if extractTemplates && deduplicate {
+			return toolError("'extract_templates' and 'deduplicate' are mutually exclusive"), nil
+		}
+
 		c := getClient(ctx)
 		if c == nil {
 			return toolError("no Graylog credentials: Authorization header required"), nil
 		}
-		return executeSearch(ctx, c, params, getBoolParam(args, "deduplicate"), defaultMaxResultSize)
+		return executeSearch(ctx, c, params, deduplicate, extractTemplates, defaultMaxResultSize)
 	}
 }
 
@@ -110,13 +119,13 @@ func searchLogsHandler(getClient ClientFunc) func(ctx context.Context, request m
 // unique results despite duplicate messages in the stream.
 const dedupFetchMultiplier = 3
 
-func executeSearch(ctx context.Context, client *graylog.Client, params graylog.SearchParams, deduplicate bool, maxResultSize int) (*mcp.CallToolResult, error) {
+func executeSearch(ctx context.Context, client *graylog.Client, params graylog.SearchParams, deduplicate bool, extractTemplates bool, maxResultSize int) (*mcp.CallToolResult, error) {
 	requestedLimit := params.Limit
 	originalOffset := params.Offset
 
-	// When deduplicating, fetch from offset=0 so dedup works across the full range.
-	// Offset is applied to the deduplicated results afterwards.
-	if deduplicate {
+	// When deduplicating or extracting templates, fetch from offset=0 so processing
+	// works across the full range. Offset is applied to the results afterwards.
+	if deduplicate || extractTemplates {
 		params.Offset = 0
 		params.Limit = min((originalOffset+requestedLimit)*dedupFetchMultiplier, 10000)
 	}
@@ -136,6 +145,29 @@ func executeSearch(ctx context.Context, client *graylog.Client, params graylog.S
 		for _, f := range strings.Split(params.Fields, ",") {
 			fieldList = append(fieldList, strings.TrimSpace(f))
 		}
+	}
+
+	if extractTemplates && len(resp.Messages) > 0 {
+		templates, err := templateizeMessages(resp.Messages)
+		if err != nil {
+			return toolError("Template extraction failed: " + err.Error()), nil
+		}
+		capTemplateMessageIDs(templates, 5)
+
+		totalTemplates := len(templates)
+		hasMore := hasMoreFromPagination || totalTemplates > requestedLimit
+		if len(templates) > requestedLimit {
+			templates = templates[:requestedLimit]
+		}
+
+		result := map[string]any{
+			"templates":         templates,
+			"total_results":     resp.TotalResults,
+			"template_count":    totalTemplates,
+			"messages_analyzed": len(resp.Messages),
+			"has_more":          hasMore,
+		}
+		return fitTemplateSearchResult(result, maxResultSize)
 	}
 
 	if deduplicate && len(resp.Messages) > 0 {

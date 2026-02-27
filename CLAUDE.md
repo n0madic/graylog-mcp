@@ -46,7 +46,8 @@ dedup/dedup.go               SHA256-based log deduplication, custom MarshalJSON 
 tools/
   helpers.go                 toolSuccess/toolSuccessJSON/toolError response builders, param extraction
   fit_result.go              Generic progressive response fitting (resultAdapter + fitResult)
-  search_logs.go             search_logs tool + executeSearch (optional stream_id for stream filtering)
+  search_logs.go             search_logs tool + executeSearch (optional stream_id for stream filtering, extract_templates for ULP templateization)
+  templateize.go             ULP-based log templateization: templateizeMessages, capTemplateMessageIDs, fitTemplateSearchResult
   list_streams.go            list_streams tool (filters disabled, optional title substring filter)
   list_fields.go             list_fields tool (optional name substring filter, sorted []string output — no types, API doesn't return them)
   get_log_context.go         get_log_context tool (fetches messages before/after a target by timestamp, optional stream_id filter)
@@ -115,6 +116,15 @@ Each tool handler:
 - `CapMessageIDs(results, 5)` is applied immediately after `Deduplicate`, before `fitResult` — the cap is always enforced
 - Dedup response key is `total_raw_results` (not `total_results`) to signal it is the raw Graylog match count, not the unique-group count
 - Dedup response key `unique_in_batch` is the count of unique groups in the fetched batch (not a global unique count)
+
+### Templateization (ULP)
+- `extract_templates` param on `search_logs` enables ULP-based log pattern mining via `github.com/n0madic/go-ulp`
+- Mutually exclusive with `deduplicate` — templateization subsumes dedup (groups similar, not just identical)
+- Newlines in messages are replaced with spaces before feeding to ULP (it reads line-by-line)
+- `MessageIDs` capped to 5 per template (same convention as dedup)
+- Templates sorted by count descending (most frequent patterns first)
+- Overfetch strategy same as dedup — `limit * 3` for better template coverage
+- Fitting: truncate template strings → halve template count → metadata-only last resort
 
 ### Tool responses
 - `toolSuccess(data)` serializes with `json.Marshal` to JSON text

@@ -1,8 +1,11 @@
 module github.com/n0madic/graylog-mcp
 
-go 1.23.0
+go 1.25.0
 
-require github.com/mark3labs/mcp-go v0.44.0
+require (
+	github.com/mark3labs/mcp-go v0.44.0
+	github.com/n0madic/go-ulp v0.0.0-20260227213731-103b65ec7806
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

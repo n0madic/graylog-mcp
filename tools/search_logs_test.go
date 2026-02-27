@@ -67,7 +67,7 @@ func TestExecuteSearchDedupHonorsLimit(t *testing.T) {
 	result, err := executeSearch(context.Background(), client, graylog.SearchParams{
 		Query: "*",
 		Limit: 3,
-	}, true, 50000)
+	}, true, false, 50000)
 	if err != nil {
 		t.Fatalf("executeSearch returned error: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestExecuteSearchDedupWithOffset(t *testing.T) {
 		Query:  "*",
 		Limit:  2,
 		Offset: 2,
-	}, true, 50000)
+	}, true, false, 50000)
 	if err != nil {
 		t.Fatalf("executeSearch returned error: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestExecuteSearchDedupRespectsFields(t *testing.T) {
 		Query:  "*",
 		Limit:  10,
 		Fields: "timestamp,source,message,level",
-	}, true, 50000)
+	}, true, false, 50000)
 	if err != nil {
 		t.Fatalf("executeSearch returned error: %v", err)
 	}
@@ -200,6 +200,93 @@ func TestExecuteSearchDedupRespectsFields(t *testing.T) {
 	}
 }
 
+func TestExecuteSearchTemplateize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeViewsSearchResponse(w, 10, []testLogMessage{
+			{ID: "id-1", Timestamp: "2024-01-01T00:00:00.000Z", Source: "svc-a", Message: "Connection to 10.0.0.1 failed: timeout", Index: "idx"},
+			{ID: "id-2", Timestamp: "2024-01-01T00:00:01.000Z", Source: "svc-a", Message: "Connection to 10.0.0.2 failed: timeout", Index: "idx"},
+			{ID: "id-3", Timestamp: "2024-01-01T00:00:02.000Z", Source: "svc-a", Message: "Connection to 10.0.0.3 failed: timeout", Index: "idx"},
+			{ID: "id-4", Timestamp: "2024-01-01T00:00:03.000Z", Source: "svc-b", Message: "User admin logged in", Index: "idx"},
+			{ID: "id-5", Timestamp: "2024-01-01T00:00:04.000Z", Source: "svc-b", Message: "User root logged in", Index: "idx"},
+		})
+	}))
+	defer server.Close()
+
+	client := graylog.NewClient(server.URL, "token", "token", false, 2*time.Second)
+	result, err := executeSearch(context.Background(), client, graylog.SearchParams{
+		Query: "*",
+		Limit: 50,
+	}, false, true, 50000)
+	if err != nil {
+		t.Fatalf("executeSearch returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success, got error: %v", result.Content)
+	}
+
+	payload := decodeToolResultJSON(t, result)
+
+	templates, ok := payload["templates"].([]any)
+	if !ok {
+		t.Fatalf("templates has unexpected type %T", payload["templates"])
+	}
+	if len(templates) == 0 {
+		t.Fatal("expected at least one template")
+	}
+
+	totalResults, ok := payload["total_results"].(float64)
+	if !ok || totalResults != 10 {
+		t.Fatalf("expected total_results=10, got %v", payload["total_results"])
+	}
+
+	templateCount, ok := payload["template_count"].(float64)
+	if !ok || templateCount == 0 {
+		t.Fatalf("expected template_count > 0, got %v", payload["template_count"])
+	}
+
+	messagesAnalyzed, ok := payload["messages_analyzed"].(float64)
+	if !ok || messagesAnalyzed != 5 {
+		t.Fatalf("expected messages_analyzed=5, got %v", payload["messages_analyzed"])
+	}
+
+	// Verify each template has expected fields.
+	for i, tmpl := range templates {
+		tmplMap, ok := tmpl.(map[string]any)
+		if !ok {
+			t.Fatalf("template[%d] has unexpected type %T", i, tmpl)
+		}
+		if _, ok := tmplMap["template"].(string); !ok {
+			t.Fatalf("template[%d] missing 'template' string field", i)
+		}
+		if _, ok := tmplMap["count"].(float64); !ok {
+			t.Fatalf("template[%d] missing 'count' field", i)
+		}
+		if _, ok := tmplMap["message_ids"].([]any); !ok {
+			t.Fatalf("template[%d] missing 'message_ids' array field", i)
+		}
+	}
+}
+
+func TestSearchLogsRejectsExtractTemplatesWithDeduplicate(t *testing.T) {
+	client := graylog.NewClient("https://graylog.example.com", "token", "token", false, 2*time.Second)
+	handler := searchLogsHandler(func(_ context.Context) *graylog.Client { return client })
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"query":             "*",
+		"extract_templates": true,
+		"deduplicate":       true,
+	}
+
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected IsError=true when both extract_templates and deduplicate are set")
+	}
+}
+
 func TestExecuteSearchOmitsQueryTimeInNonDedupMode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/views/search/sync" {
@@ -216,7 +303,7 @@ func TestExecuteSearchOmitsQueryTimeInNonDedupMode(t *testing.T) {
 	result, err := executeSearch(context.Background(), client, graylog.SearchParams{
 		Query: "*",
 		Limit: 10,
-	}, false, 50000)
+	}, false, false, 50000)
 	if err != nil {
 		t.Fatalf("executeSearch returned error: %v", err)
 	}

@@ -10,6 +10,7 @@ Single binary, zero runtime dependencies. Written in Go.
 - **Aggregate logs** with statistical functions (count, avg, min, max, percentile, etc.) and grouping
 - **Stream filtering** to scope searches to specific Graylog streams
 - **Log deduplication** to collapse repeated messages and show counts
+- **Log template extraction** to discover common patterns using ULP pattern mining
 - **Context retrieval** to see messages surrounding a specific log entry
 - **Field discovery** to explore available log fields
 - **Stream listing** to browse available Graylog streams
@@ -172,10 +173,13 @@ Search Graylog logs using Lucene query syntax.
 | `fields` | string | No | Comma-separated list of fields to return |
 | `sort` | string | No | Sort order (e.g. `timestamp:desc`) |
 | `deduplicate` | boolean | No | Collapse duplicate messages and show count |
+| `extract_templates` | boolean | No | Extract log templates using ULP pattern mining |
 
 > `from` and `to` must be used together. If neither is set, a relative time range is used.
 >
 > When `deduplicate=true`, `limit` is applied to the number of deduplicated groups returned.
+>
+> `extract_templates` and `deduplicate` are mutually exclusive. When `extract_templates=true`, similar messages are grouped into templates with dynamic parts replaced by `<*>` wildcards (e.g. `"Connection to <*> failed: timeout"`). Returns templates sorted by frequency with counts and sample message IDs.
 
 ### `list_streams`
 
@@ -251,6 +255,7 @@ Once connected, you can ask your LLM things like:
 - "What fields are available in my Graylog instance?"
 - "List all streams related to payments"
 - "Show deduplicated error logs from production to find the most common issues"
+- "Extract log templates from the last hour to see the most common log patterns"
 - "Count logs per source for the last hour and show the top 5"
 - "What is the average response time grouped by service over the last 30 minutes?"
 - "Show me the 95th percentile of request duration grouped by endpoint"
