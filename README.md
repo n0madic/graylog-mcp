@@ -36,6 +36,18 @@ cd graylog-mcp
 go build -o graylog-mcp .
 ```
 
+### Docker
+
+Container images are published to GHCR as `ghcr.io/n0madic/graylog-mcp`.
+
+```bash
+docker pull ghcr.io/n0madic/graylog-mcp:latest
+docker run --rm -p 8090:8090 ghcr.io/n0madic/graylog-mcp:latest
+```
+
+The container defaults to `GRAYLOG_MCP_TRANSPORT=http` and listens on `0.0.0.0:8090`.
+Override `GRAYLOG_MCP_TRANSPORT=stdio` if you need stdio mode inside the container.
+
 ## Configuration
 
 The server is configured via environment variables or CLI flags. CLI flags take precedence over environment variables.
@@ -124,8 +136,6 @@ Run the server in http mode using Docker Compose. No Graylog-specific config is 
 services:
   graylog-mcp:
     image: ghcr.io/n0madic/graylog-mcp:latest
-    environment:
-      GRAYLOG_MCP_TRANSPORT: http
     ports:
       - "8090:8090"
 ```
@@ -137,7 +147,6 @@ services:
   graylog-mcp:
     image: ghcr.io/n0madic/graylog-mcp:latest
     environment:
-      GRAYLOG_MCP_TRANSPORT: http
       GRAYLOG_URL: https://graylog.internal
     ports:
       - "8090:8090"
