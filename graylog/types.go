@@ -231,6 +231,13 @@ type viewsSearchResponse struct {
 
 type viewsQueryResult struct {
 	SearchTypes map[string]viewsSearchTypeResult `json:"search_types"`
+	Errors      []viewsSearchError               `json:"errors,omitempty"`
+}
+
+type viewsSearchError struct {
+	Description  string `json:"description"`
+	SearchTypeID string `json:"search_type_id,omitempty"`
+	Type         string `json:"type,omitempty"`
 }
 
 type viewsSearchTypeResult struct {

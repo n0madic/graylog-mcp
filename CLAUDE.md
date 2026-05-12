@@ -97,6 +97,7 @@ Each tool handler:
 - Default relative range is 300 seconds (5 minutes)
 - Limit is capped at 10000 (Elasticsearch limitation)
 - Stream filtering is done via `StreamIDs` field in `SearchParams`, translated to Views filter objects
+- Graylog Views API returns HTTP 200 with `results.q1.errors` populated when a query fails (parse error, invalid sort field, stream permission). `client.Search` checks `errors` before the `msgs` search-type lookup and surfaces the description as `Graylog query error: …`; otherwise the missing-`msgs` branch produces a generic, uninformative message that hides the real cause. Empty result sets are NOT this case — Graylog returns `msgs` with empty `messages` and `total_results: 0`.
 
 ### Aggregation (Scripting API)
 - `client.Aggregate()` posts to `/api/search/aggregate` (Scripting API) — separate from Views API used by search

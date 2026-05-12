@@ -273,6 +273,21 @@ func (c *Client) Search(ctx context.Context, params SearchParams) (*SearchRespon
 	if !ok {
 		return nil, fmt.Errorf("unexpected Graylog response: missing query result 'q1'")
 	}
+	if len(queryResult.Errors) > 0 {
+		descs := make([]string, 0, len(queryResult.Errors))
+		for _, e := range queryResult.Errors {
+			d := e.Description
+			if d == "" {
+				d = e.Type
+			}
+			if d != "" {
+				descs = append(descs, d)
+			}
+		}
+		if len(descs) > 0 {
+			return nil, fmt.Errorf("Graylog query error: %s", strings.Join(descs, "; "))
+		}
+	}
 	searchTypeResult, ok := queryResult.SearchTypes["msgs"]
 	if !ok {
 		return nil, fmt.Errorf("unexpected Graylog response: missing search type 'msgs' in query result")
